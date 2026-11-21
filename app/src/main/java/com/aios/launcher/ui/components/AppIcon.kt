@@ -1,7 +1,7 @@
-
 package com.aios.launcher.ui.components
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.aios.launcher.model.AppInfo
-import androidx.compose.foundation.ExperimentalFoundationApi
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -32,8 +31,8 @@ fun AppIcon(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     showLabel: Boolean = true,
-    iconSize: Dp = 55.dp,
-    labelColor: Color = Color(0xFF29283D),
+    iconSize: Dp = 57.dp,
+    labelColor: Color = Color.White,
     onLongClick: (() -> Unit)? = null
 ) {
     val iconBitmap = remember(app.packageName) {
@@ -51,7 +50,7 @@ fun AppIcon(
                 onLongClick = onLongClick
             ),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(5.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Image(
             bitmap = iconBitmap,
@@ -63,8 +62,8 @@ fun AppIcon(
         if (showLabel) {
             Text(
                 text = app.name,
-                fontSize = 10.sp,
-                lineHeight = 12.sp,
+                fontSize = 11.sp,
+                lineHeight = 13.sp,
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
                 color = labelColor,
