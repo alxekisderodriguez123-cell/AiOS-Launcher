@@ -13,10 +13,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
 import androidx.core.graphics.drawable.toBitmap
 import com.aios.launcher.model.AppInfo
 
@@ -24,12 +27,15 @@ import com.aios.launcher.model.AppInfo
 fun AppIcon(
     app: AppInfo,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showLabel: Boolean = true,
+    iconSize: Dp = 55.dp,
+    labelColor: Color = Color(0xFF29283D)
 ) {
     val iconBitmap = remember(app.packageName) {
         app.icon.toBitmap(
-            width = 144,
-            height = 144
+            width = 192,
+            height = 192
         ).asImageBitmap()
     }
 
@@ -38,22 +44,26 @@ fun AppIcon(
             .width(76.dp)
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         Image(
             bitmap = iconBitmap,
             contentDescription = app.name,
-            modifier = Modifier.size(54.dp),
+            modifier = Modifier.size(iconSize),
             contentScale = ContentScale.Fit
         )
 
-        Text(
-            text = app.name,
-            fontSize = 11.sp,
-            lineHeight = 13.sp,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
+        if (showLabel) {
+            Text(
+                text = app.name,
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                color = labelColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
