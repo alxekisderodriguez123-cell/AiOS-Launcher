@@ -1,9 +1,10 @@
-
 package com.aios.launcher.ui.screens
 
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -17,9 +18,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,12 +37,13 @@ import com.aios.launcher.data.LauncherStore
 import com.aios.launcher.model.AppInfo
 import com.aios.launcher.ui.components.AppContextMenu
 import com.aios.launcher.ui.components.AppIcon
+import com.aios.launcher.ui.components.LiquidDock
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val AiOSInk = Color(0xFF29283D)
+private val Ink = Color(0xFF29283D)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -58,21 +61,10 @@ fun HomeScreen(
     var query by remember { mutableStateOf("") }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
 
-    var orderedPackages by remember {
-        mutableStateOf(emptyList<String>())
-    }
-
-    var dockPackages by remember {
-        mutableStateOf(emptyList<String>())
-    }
-
-    var hiddenPackages by remember {
-        mutableStateOf(emptySet<String>())
-    }
-
-    var selectedPackage by remember {
-        mutableStateOf<String?>(null)
-    }
+    var orderedPackages by remember { mutableStateOf(emptyList<String>()) }
+    var dockPackages by remember { mutableStateOf(emptyList<String>()) }
+    var hiddenPackages by remember { mutableStateOf(emptySet<String>()) }
+    var selectedPackage by remember { mutableStateOf<String?>(null) }
 
     val appMap = remember(apps) {
         apps.associateBy { it.packageName }
@@ -80,9 +72,9 @@ fun HomeScreen(
 
     LaunchedEffect(apps) {
         if (apps.isNotEmpty()) {
-            val packageNames = apps.map { it.packageName }
+            val packages = apps.map { it.packageName }
 
-            orderedPackages = store.orderApps(packageNames)
+            orderedPackages = store.orderApps(packages)
 
             val defaults = listOf(
                 "com.android.dialer",
@@ -94,12 +86,12 @@ fun HomeScreen(
             )
 
             dockPackages = store.getConfiguredDock(
-                installedPackages = packageNames,
+                installedPackages = packages,
                 defaults = defaults
             )
 
             hiddenPackages = store.getHiddenApps()
-                .filter { it in packageNames }
+                .filter { it in packages }
                 .toSet()
 
             if (store.getDockApps().isEmpty()) {
@@ -129,7 +121,9 @@ fun HomeScreen(
         store.saveHiddenApps(hiddenPackages)
     }
 
-    BackHandler(enabled = showLibrary || selectedPackage != null) {
+    BackHandler(
+        enabled = showLibrary || selectedPackage != null
+    ) {
         if (selectedPackage != null) {
             selectedPackage = null
         } else {
@@ -144,7 +138,6 @@ fun HomeScreen(
         .mapNotNull { appMap[it] }
 
     val pageSize = 16
-
     val pageCount = (
         (visibleApps.size.coerceAtLeast(1) + pageSize - 1) / pageSize
     )
@@ -164,250 +157,225 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         AiOSWallpaper()
 
-        if (!showLibrary) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 22.dp)
-                    .padding(top = 12.dp, bottom = 8.dp)
-            ) {
+        Crossfade(
+            targetState = showLibrary,
+            animationSpec = tween(260),
+            label = "AiOS screen transition"
+        ) { library ->
+            if (library) {
+                AppLibraryScreen(
+                    apps = apps,
+                    query = query,
+                    onQueryChange = { query = it },
+                    onLaunchApp = onLaunchApp,
+                    onLongClick = { selectedPackage = it },
+                    onClose = {
+                        showLibrary = false
+                        query = ""
+                    }
+                )
+            } else {
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp, bottom = 18.dp)
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 23.dp)
+                        .padding(top = 15.dp, bottom = 7.dp)
                 ) {
-                    Text(
-                        text = now.format(
-                            DateTimeFormatter.ofPattern("HH:mm")
-                        ),
-                        fontSize = 66.sp,
-                        lineHeight = 70.sp,
-                        fontWeight = FontWeight.Light,
-                        color = AiOSInk,
-                        letterSpacing = (-3).sp
-                    )
-
-                    Text(
-                        text = now.format(
-                            DateTimeFormatter.ofPattern(
-                                "EEEE, d 'de' MMMM",
-                                Locale("es", "ES")
-                            )
-                        ).replaceFirstChar { it.uppercase() },
-                        fontSize = 15.sp,
-                        color = AiOSInk.copy(alpha = 0.76f),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 18.dp),
-                    shape = RoundedCornerShape(26.dp),
-                    color = Color.White.copy(alpha = 0.43f),
-                    shadowElevation = 5.dp
-                ) {
-                    Row(
-                        modifier = Modifier.padding(
-                            horizontal = 20.dp,
-                            vertical = 15.dp
-                        ),
-                        verticalAlignment = Alignment.CenterVertically
+                    // Reloj
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 13.dp, bottom = 23.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "HOY",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AiOSInk.copy(alpha = 0.55f),
-                                letterSpacing = 2.sp
-                            )
-
-                            Text(
-                                now.format(
-                                    DateTimeFormatter.ofPattern(
-                                        "d 'de' MMMM",
-                                        Locale("es", "ES")
-                                    )
-                                ),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = AiOSInk
-                            )
-                        }
-
                         Text(
-                            now.dayOfMonth.toString(),
-                            fontSize = 39.sp,
+                            text = now.format(
+                                DateTimeFormatter.ofPattern("HH:mm")
+                            ),
+                            fontSize = 76.sp,
+                            lineHeight = 80.sp,
                             fontWeight = FontWeight.Light,
-                            color = Color(0xFF7779C9)
+                            color = Ink,
+                            letterSpacing = (-5).sp
                         )
-                    }
-                }
 
-                if (visibleApps.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
                         Text(
-                            "Tu escritorio está vacío",
-                            color = AiOSInk
+                            text = now.format(
+                                DateTimeFormatter.ofPattern(
+                                    "EEEE, d 'de' MMMM",
+                                    Locale("es", "ES")
+                                )
+                            ).replaceFirstChar { it.uppercase() },
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Ink.copy(alpha = 0.65f)
                         )
                     }
-                } else {
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                    ) { page ->
-                        val pageApps = visibleApps
-                            .drop(page * pageSize)
-                            .take(pageSize)
 
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(4),
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalArrangement = Arrangement.spacedBy(19.dp),
-                            contentPadding = PaddingValues(
-                                top = 8.dp,
-                                bottom = 12.dp
+                    // Widget de fecha
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 17.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        color = Color.White.copy(alpha = 0.37f),
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(
+                                horizontal = 19.dp,
+                                vertical = 13.dp
                             ),
-                            userScrollEnabled = false
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            items(
-                                items = pageApps,
-                                key = { it.packageName }
-                            ) { app ->
-                                AppIcon(
-                                    app = app,
-                                    onClick = {
-                                        onLaunchApp(app.packageName)
-                                    },
-                                    onLongClick = {
-                                        selectedPackage = app.packageName
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    "CALENDARIO",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 2.sp,
+                                    color = Ink.copy(alpha = 0.48f)
+                                )
+
+                                Text(
+                                    now.format(
+                                        DateTimeFormatter.ofPattern(
+                                            "MMMM yyyy",
+                                            Locale("es", "ES")
+                                        )
+                                    ).replaceFirstChar { it.uppercase() },
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Ink
                                 )
                             }
-                        }
-                    }
-                }
 
-                if (pageCount > 1) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 9.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        repeat(pageCount) { index ->
-                            Box(
-                                modifier = Modifier
-                                    .padding(horizontal = 3.dp)
-                                    .size(
-                                        width = if (
-                                            pagerState.currentPage == index
-                                        ) 17.dp else 6.dp,
-                                        height = 6.dp
-                                    )
-                                    .background(
-                                        if (pagerState.currentPage == index)
-                                            Color.White
-                                        else Color.White.copy(alpha = 0.48f),
-                                        CircleShape
-                                    )
+                            Text(
+                                now.dayOfMonth.toString(),
+                                fontSize = 38.sp,
+                                fontWeight = FontWeight.Light,
+                                color = Color(0xFF7779C9)
                             )
                         }
                     }
-                } else {
-                    Spacer(modifier = Modifier.height(21.dp))
-                }
 
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 5.dp, bottom = 10.dp)
-                        .shadow(
-                            elevation = 12.dp,
-                            shape = RoundedCornerShape(30.dp)
-                        ),
-                    shape = RoundedCornerShape(30.dp),
-                    color = Color.White.copy(alpha = 0.48f),
-                    shadowElevation = 2.dp
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(
-                                horizontal = 9.dp,
-                                vertical = 12.dp
-                            ),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        repeat(4) { index ->
-                            val app = dockApps.getOrNull(index)
+                    // Aplicaciones
+                    if (visibleApps.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Tu escritorio está vacío",
+                                color = Ink
+                            )
+                        }
+                    } else {
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                        ) { page ->
+                            val pageApps = visibleApps
+                                .drop(page * pageSize)
+                                .take(pageSize)
 
-                            if (app != null) {
-                                AppIcon(
-                                    app = app,
-                                    onClick = {
-                                        onLaunchApp(app.packageName)
-                                    },
-                                    onLongClick = {
-                                        selectedPackage = app.packageName
-                                    },
-                                    showLabel = false,
-                                    iconSize = 51.dp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            } else {
-                                Spacer(
-                                    modifier = Modifier.weight(1f)
-                                )
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(4),
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalArrangement = Arrangement.spacedBy(21.dp),
+                                contentPadding = PaddingValues(
+                                    top = 8.dp,
+                                    bottom = 12.dp
+                                ),
+                                userScrollEnabled = false
+                            ) {
+                                items(
+                                    items = pageApps,
+                                    key = { it.packageName }
+                                ) { app ->
+                                    AppIcon(
+                                        app = app,
+                                        onClick = {
+                                            onLaunchApp(app.packageName)
+                                        },
+                                        onLongClick = {
+                                            selectedPackage = app.packageName
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                IconButton(
-                    onClick = {
-                        showLibrary = true
-                    },
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .size(38.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Apps,
-                        contentDescription = "Biblioteca",
-                        tint = AiOSInk.copy(alpha = 0.72f),
-                        modifier = Modifier.size(23.dp)
+                    // Indicadores
+                    if (pageCount > 1) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            repeat(pageCount) { index ->
+                                Box(
+                                    modifier = Modifier
+                                        .padding(horizontal = 3.dp)
+                                        .size(
+                                            width = if (
+                                                pagerState.currentPage == index
+                                            ) 19.dp else 6.dp,
+                                            height = 6.dp
+                                        )
+                                        .background(
+                                            if (pagerState.currentPage == index)
+                                                Color.White
+                                            else Color.White.copy(alpha = 0.48f),
+                                            CircleShape
+                                        )
+                                )
+                            }
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(26.dp))
+                    }
+
+                    // Dock
+                    LiquidDock(
+                        apps = dockApps,
+                        onLaunch = onLaunchApp,
+                        onLongClick = {
+                            selectedPackage = it
+                        }
                     )
+
+                    IconButton(
+                        onClick = {
+                            showLibrary = true
+                        },
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(top = 4.dp)
+                            .size(37.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Apps,
+                            contentDescription = "Biblioteca",
+                            tint = Ink.copy(alpha = 0.65f),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
-        } else {
-            AppLibraryScreen(
-                apps = apps,
-                hiddenPackages = hiddenPackages,
-                query = query,
-                onQueryChange = { query = it },
-                onLaunchApp = onLaunchApp,
-                onLongClick = { selectedPackage = it },
-                onClose = {
-                    showLibrary = false
-                    query = ""
-                }
-            )
         }
 
         if (selectedApp != null) {
@@ -418,7 +386,9 @@ fun HomeScreen(
                     selectedPackage = null
                 },
                 onMoveBackward = {
-                    val index = orderedPackages.indexOf(selectedApp.packageName)
+                    val index = orderedPackages.indexOf(
+                        selectedApp.packageName
+                    )
 
                     if (index > 0) {
                         val updated = orderedPackages.toMutableList()
@@ -430,7 +400,9 @@ fun HomeScreen(
                     selectedPackage = null
                 },
                 onMoveForward = {
-                    val index = orderedPackages.indexOf(selectedApp.packageName)
+                    val index = orderedPackages.indexOf(
+                        selectedApp.packageName
+                    )
 
                     if (index >= 0 && index < orderedPackages.lastIndex) {
                         val updated = orderedPackages.toMutableList()
@@ -500,159 +472,40 @@ private fun AiOSWallpaper() {
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.78f),
+                        Color.White.copy(alpha = 0.82f),
                         Color.Transparent
                     ),
                     center = Offset(
-                        size.width * 0.15f,
-                        size.height * 0.20f
+                        size.width * 0.13f,
+                        size.height * 0.19f
                     ),
-                    radius = size.width * 0.75f
+                    radius = size.width * 0.78f
                 ),
-                radius = size.width * 0.75f,
+                radius = size.width * 0.78f,
                 center = Offset(
-                    size.width * 0.15f,
-                    size.height * 0.20f
+                    size.width * 0.13f,
+                    size.height * 0.19f
                 )
             )
 
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color(0xFFE9BFEF).copy(alpha = 0.55f),
+                        Color(0xFFE5B9EE).copy(alpha = 0.47f),
                         Color.Transparent
                     ),
                     center = Offset(
-                        size.width * 0.92f,
-                        size.height * 0.65f
+                        size.width * 0.94f,
+                        size.height * 0.69f
                     ),
-                    radius = size.width * 0.65f
+                    radius = size.width * 0.68f
                 ),
-                radius = size.width * 0.65f,
+                radius = size.width * 0.68f,
                 center = Offset(
-                    size.width * 0.92f,
-                    size.height * 0.65f
+                    size.width * 0.94f,
+                    size.height * 0.69f
                 )
             )
-        }
-    }
-}
-
-@Composable
-private fun AppLibraryScreen(
-    apps: List<AppInfo>,
-    hiddenPackages: Set<String>,
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onLaunchApp: (String) -> Unit,
-    onLongClick: (String) -> Unit,
-    onClose: () -> Unit
-) {
-    val filteredApps = remember(apps, query) {
-        apps.filter {
-            it.name.contains(query, ignoreCase = true)
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF0EFF8))
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 20.dp)
-            .padding(top = 15.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Biblioteca",
-                modifier = Modifier.weight(1f),
-                fontSize = 29.sp,
-                fontWeight = FontWeight.Bold,
-                color = AiOSInk
-            )
-
-            IconButton(onClick = onClose) {
-                Icon(
-                    Icons.Rounded.Close,
-                    contentDescription = "Cerrar",
-                    tint = AiOSInk
-                )
-            }
-        }
-
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            placeholder = { Text("Buscar aplicaciones") },
-            leadingIcon = {
-                Icon(
-                    Icons.Rounded.Search,
-                    contentDescription = "Buscar"
-                )
-            },
-            shape = RoundedCornerShape(20.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedContainerColor = Color.White.copy(alpha = 0.75f),
-                focusedContainerColor = Color.White,
-                unfocusedBorderColor = Color.Transparent,
-                focusedBorderColor = Color(0xFF9694E9)
-            )
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (hiddenPackages.isNotEmpty()) {
-            Text(
-                text = "${hiddenPackages.size} aplicaciones ocultas",
-                color = AiOSInk.copy(alpha = 0.65f),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        }
-
-        if (filteredApps.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "No se encontraron aplicaciones",
-                    color = AiOSInk.copy(alpha = 0.65f)
-                )
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalArrangement = Arrangement.spacedBy(22.dp),
-                contentPadding = PaddingValues(bottom = 30.dp)
-            ) {
-                items(
-                    items = filteredApps,
-                    key = { it.packageName }
-                ) { app ->
-                    AppIcon(
-                        app = app,
-                        onClick = {
-                            onLaunchApp(app.packageName)
-                        },
-                        onLongClick = {
-                            onLongClick(app.packageName)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        labelColor = AiOSInk
-                    )
-                }
-            }
         }
     }
 }
