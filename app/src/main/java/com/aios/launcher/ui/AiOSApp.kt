@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.aios.launcher.data.AppRepository
+import com.aios.launcher.model.AppInfo
 import com.aios.launcher.ui.screens.HomeScreen
 import com.aios.launcher.ui.theme.AiOSTheme
 import kotlinx.coroutines.Dispatchers
@@ -18,20 +19,13 @@ fun AiOSApp(
     onSetDefaultLauncher: () -> Unit
 ) {
     val context = LocalContext.current
+
     val repository = remember(context) {
         AppRepository(context)
     }
 
     var apps by remember {
-        mutableStateOf(emptyList<com.aios.launcher.model.AppInfo>())
-    }
-
-    var query by remember {
-        mutableStateOf("")
-    }
-
-    var showAllApps by remember {
-        mutableStateOf(false)
+        mutableStateOf(emptyList<AppInfo>())
     }
 
     LaunchedEffect(repository) {
@@ -44,16 +38,9 @@ fun AiOSApp(
     AiOSTheme {
         HomeScreen(
             apps = apps,
-            query = query,
-            showAllApps = showAllApps,
-            onQueryChange = { query = it },
             onLaunchApp = { packageName ->
                 repository.launchApp(packageName)
-            },
-            onToggleDrawer = {
-                showAllApps = !showAllApps
-            },
-            onSetDefaultLauncher = onSetDefaultLauncher
+            }
         )
     }
 }
