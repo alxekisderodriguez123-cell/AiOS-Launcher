@@ -1,7 +1,11 @@
+
 package com.aios.launcher.ui.screens
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -9,7 +13,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,11 +27,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aios.launcher.data.LauncherStore
 import com.aios.launcher.model.AppInfo
+import com.aios.launcher.ui.components.AppContextMenu
 import com.aios.launcher.ui.components.AppIcon
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
@@ -43,8 +48,65 @@ fun HomeScreen(
     apps: List<AppInfo>,
     onLaunchApp: (String) -> Unit
 ) {
+    val context = LocalContext.current
+
+    val store = remember(context) {
+        LauncherStore(context)
+    }
+
     var showLibrary by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
+
+    var orderedPackages by remember {
+        mutableStateOf(emptyList<String>())
+    }
+
+    var dockPackages by remember {
+        mutableStateOf(emptyList<String>())
+    }
+
+    var hiddenPackages by remember {
+        mutableStateOf(emptySet<String>())
+    }
+
+    var selectedPackage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    val appMap = remember(apps) {
+        apps.associateBy { it.packageName }
+    }
+
+    LaunchedEffect(apps) {
+        if (apps.isNotEmpty()) {
+            val packageNames = apps.map { it.packageName }
+
+            orderedPackages = store.orderApps(packageNames)
+
+            val defaults = listOf(
+                "com.android.dialer",
+                "com.google.android.dialer",
+                "com.google.android.apps.messaging",
+                "com.android.messaging",
+                "com.android.chrome",
+                "com.google.android.camera"
+            )
+
+            dockPackages = store.getConfiguredDock(
+                installedPackages = packageNames,
+                defaults = defaults
+            )
+
+            hiddenPackages = store.getHiddenApps()
+                .filter { it in packageNames }
+                .toSet()
+
+            if (store.getDockApps().isEmpty()) {
+                store.saveDockApps(dockPackages)
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -53,34 +115,50 @@ fun HomeScreen(
         }
     }
 
-    BackHandler(enabled = showLibrary) {
-        showLibrary = false
+    LaunchedEffect(orderedPackages) {
+        if (orderedPackages.isNotEmpty()) {
+            store.saveAppOrder(orderedPackages)
+        }
     }
 
+    LaunchedEffect(dockPackages) {
+        store.saveDockApps(dockPackages)
+    }
+
+    LaunchedEffect(hiddenPackages) {
+        store.saveHiddenApps(hiddenPackages)
+    }
+
+    BackHandler(enabled = showLibrary || selectedPackage != null) {
+        if (selectedPackage != null) {
+            selectedPackage = null
+        } else {
+            showLibrary = false
+            query = ""
+        }
+    }
+
+    val visibleApps = orderedPackages
+        .filterNot { it in hiddenPackages }
+        .filterNot { it in dockPackages }
+        .mapNotNull { appMap[it] }
+
     val pageSize = 16
-    val pageCount = ((apps.size.coerceAtLeast(1) + pageSize - 1) / pageSize)
-    val pagerState = rememberPagerState(pageCount = { pageCount })
 
-    val dockApps = remember(apps) {
-        val groups = listOf(
-            listOf("teléfono", "phone", "dialer"),
-            listOf("mensajes", "messages", "sms"),
-            listOf("chrome", "browser", "navegador"),
-            listOf("cámara", "camera")
-        )
+    val pageCount = (
+        (visibleApps.size.coerceAtLeast(1) + pageSize - 1) / pageSize
+    )
 
-        val selected = groups.mapNotNull { keywords ->
-            apps.firstOrNull { app ->
-                keywords.any { keyword ->
-                    app.name.contains(keyword, true) ||
-                        app.packageName.contains(keyword, true)
-                }
-            }
-        }.distinctBy { it.packageName }
+    val pagerState = rememberPagerState(
+        pageCount = { pageCount }
+    )
 
-        (selected + apps.filterNot { app ->
-            selected.any { it.packageName == app.packageName }
-        }).take(4)
+    val selectedApp = selectedPackage?.let {
+        appMap[it]
+    }
+
+    val dockApps = dockPackages.mapNotNull {
+        appMap[it]
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -95,7 +173,6 @@ fun HomeScreen(
                     .padding(horizontal = 22.dp)
                     .padding(top = 12.dp, bottom = 8.dp)
             ) {
-                // Reloj y fecha
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -125,7 +202,6 @@ fun HomeScreen(
                     )
                 }
 
-                // Widget de calendario
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -149,6 +225,7 @@ fun HomeScreen(
                                 color = AiOSInk.copy(alpha = 0.55f),
                                 letterSpacing = 2.sp
                             )
+
                             Text(
                                 now.format(
                                     DateTimeFormatter.ofPattern(
@@ -171,8 +248,7 @@ fun HomeScreen(
                     }
                 }
 
-                // Escritorio de aplicaciones
-                if (apps.isEmpty()) {
+                if (visibleApps.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -180,7 +256,7 @@ fun HomeScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "No hay aplicaciones disponibles",
+                            "Tu escritorio está vacío",
                             color = AiOSInk
                         )
                     }
@@ -191,7 +267,7 @@ fun HomeScreen(
                             .weight(1f)
                             .fillMaxWidth()
                     ) { page ->
-                        val pageApps = apps
+                        val pageApps = visibleApps
                             .drop(page * pageSize)
                             .take(pageSize)
 
@@ -215,15 +291,16 @@ fun HomeScreen(
                                     onClick = {
                                         onLaunchApp(app.packageName)
                                     },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
+                                    onLongClick = {
+                                        selectedPackage = app.packageName
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
                     }
                 }
 
-                // Indicadores de páginas
                 if (pageCount > 1) {
                     Row(
                         modifier = Modifier
@@ -255,7 +332,6 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(21.dp))
                 }
 
-                // Dock
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -278,23 +354,35 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        dockApps.forEach { app ->
-                            AppIcon(
-                                app = app,
-                                onClick = {
-                                    onLaunchApp(app.packageName)
-                                },
-                                showLabel = false,
-                                iconSize = 51.dp,
-                                modifier = Modifier.weight(1f)
-                            )
+                        repeat(4) { index ->
+                            val app = dockApps.getOrNull(index)
+
+                            if (app != null) {
+                                AppIcon(
+                                    app = app,
+                                    onClick = {
+                                        onLaunchApp(app.packageName)
+                                    },
+                                    onLongClick = {
+                                        selectedPackage = app.packageName
+                                    },
+                                    showLabel = false,
+                                    iconSize = 51.dp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            } else {
+                                Spacer(
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
 
-                // Acceso a la biblioteca
                 IconButton(
-                    onClick = { showLibrary = true },
+                    onClick = {
+                        showLibrary = true
+                    },
                     modifier = Modifier
                         .align(Alignment.CenterHorizontally)
                         .size(38.dp)
@@ -310,8 +398,83 @@ fun HomeScreen(
         } else {
             AppLibraryScreen(
                 apps = apps,
+                hiddenPackages = hiddenPackages,
+                query = query,
+                onQueryChange = { query = it },
                 onLaunchApp = onLaunchApp,
-                onClose = { showLibrary = false }
+                onLongClick = { selectedPackage = it },
+                onClose = {
+                    showLibrary = false
+                    query = ""
+                }
+            )
+        }
+
+        if (selectedApp != null) {
+            AppContextMenu(
+                app = selectedApp,
+                isInDock = selectedPackage in dockPackages,
+                onDismiss = {
+                    selectedPackage = null
+                },
+                onMoveBackward = {
+                    val index = orderedPackages.indexOf(selectedApp.packageName)
+
+                    if (index > 0) {
+                        val updated = orderedPackages.toMutableList()
+                        val item = updated.removeAt(index)
+                        updated.add(index - 1, item)
+                        orderedPackages = updated
+                    }
+
+                    selectedPackage = null
+                },
+                onMoveForward = {
+                    val index = orderedPackages.indexOf(selectedApp.packageName)
+
+                    if (index >= 0 && index < orderedPackages.lastIndex) {
+                        val updated = orderedPackages.toMutableList()
+                        val item = updated.removeAt(index)
+                        updated.add(index + 1, item)
+                        orderedPackages = updated
+                    }
+
+                    selectedPackage = null
+                },
+                onToggleDock = {
+                    val updated = dockPackages.toMutableList()
+
+                    if (selectedApp.packageName in updated) {
+                        updated.remove(selectedApp.packageName)
+                    } else if (updated.size < 4) {
+                        updated.add(selectedApp.packageName)
+                    }
+
+                    dockPackages = updated
+                    selectedPackage = null
+                },
+                onHide = {
+                    hiddenPackages = hiddenPackages +
+                        selectedApp.packageName
+
+                    dockPackages = dockPackages -
+                        selectedApp.packageName
+
+                    selectedPackage = null
+                },
+                onInfo = {
+                    val intent = Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                    ).apply {
+                        data = android.net.Uri.parse(
+                            "package:${selectedApp.packageName}"
+                        )
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+
+                    context.startActivity(intent)
+                    selectedPackage = null
+                }
             )
         }
     }
@@ -338,13 +501,19 @@ private fun AiOSWallpaper() {
                 brush = Brush.radialGradient(
                     colors = listOf(
                         Color.White.copy(alpha = 0.78f),
-                        Color(0xFFB8B9F1).copy(alpha = 0.0f)
+                        Color.Transparent
                     ),
-                    center = Offset(size.width * 0.15f, size.height * 0.20f),
+                    center = Offset(
+                        size.width * 0.15f,
+                        size.height * 0.20f
+                    ),
                     radius = size.width * 0.75f
                 ),
                 radius = size.width * 0.75f,
-                center = Offset(size.width * 0.15f, size.height * 0.20f)
+                center = Offset(
+                    size.width * 0.15f,
+                    size.height * 0.20f
+                )
             )
 
             drawCircle(
@@ -353,11 +522,17 @@ private fun AiOSWallpaper() {
                         Color(0xFFE9BFEF).copy(alpha = 0.55f),
                         Color.Transparent
                     ),
-                    center = Offset(size.width * 0.92f, size.height * 0.65f),
+                    center = Offset(
+                        size.width * 0.92f,
+                        size.height * 0.65f
+                    ),
                     radius = size.width * 0.65f
                 ),
                 radius = size.width * 0.65f,
-                center = Offset(size.width * 0.92f, size.height * 0.65f)
+                center = Offset(
+                    size.width * 0.92f,
+                    size.height * 0.65f
+                )
             )
         }
     }
@@ -366,11 +541,13 @@ private fun AiOSWallpaper() {
 @Composable
 private fun AppLibraryScreen(
     apps: List<AppInfo>,
+    hiddenPackages: Set<String>,
+    query: String,
+    onQueryChange: (String) -> Unit,
     onLaunchApp: (String) -> Unit,
+    onLongClick: (String) -> Unit,
     onClose: () -> Unit
 ) {
-    var query by remember { mutableStateOf("") }
-
     val filteredApps = remember(apps, query) {
         apps.filter {
             it.name.contains(query, ignoreCase = true)
@@ -411,10 +588,10 @@ private fun AppLibraryScreen(
 
         OutlinedTextField(
             value = query,
-            onValueChange = { query = it },
+            onValueChange = onQueryChange,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            placeholder = { Text("Buscar") },
+            placeholder = { Text("Buscar aplicaciones") },
             leadingIcon = {
                 Icon(
                     Icons.Rounded.Search,
@@ -430,7 +607,16 @@ private fun AppLibraryScreen(
             )
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (hiddenPackages.isNotEmpty()) {
+            Text(
+                text = "${hiddenPackages.size} aplicaciones ocultas",
+                color = AiOSInk.copy(alpha = 0.65f),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
 
         if (filteredApps.isEmpty()) {
             Box(
@@ -456,7 +642,12 @@ private fun AppLibraryScreen(
                 ) { app ->
                     AppIcon(
                         app = app,
-                        onClick = { onLaunchApp(app.packageName) },
+                        onClick = {
+                            onLaunchApp(app.packageName)
+                        },
+                        onLongClick = {
+                            onLongClick(app.packageName)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         labelColor = AiOSInk
                     )
